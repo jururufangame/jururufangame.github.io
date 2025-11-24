@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>태양계</title>
+<title>개선된 3D 태양계 (기울기 궤도, 지구 자전, 궤도선 토글, 별)</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   #controls {
@@ -20,17 +20,21 @@
   <div id="info">마우스 드래그: 회전 / 휠: 줌</div>
 </div>
 
+<!-- Three.js + OrbitControls (같은 버전 사용) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
+/* =========================
+   기본 세팅
+   ========================= */
 let scene, camera, renderer, controls;
-let planetPivots = [];   
-let planets = [];      
-let orbitLines = [];   
+let planetPivots = [];   // 각 행성의 pivot(Object3D) — 궤도면을 회전시키는 용도
+let planets = [];        // 행성 메쉬 참조
+let orbitLines = [];     // 궤도선 Mesh들
 let isRunning = true;
 let showOrbits = true;
-let moonPivot;          
+let moonPivot;           // 지구 달의 pivot
 let moonMesh;
 
 init();
@@ -52,19 +56,23 @@ function init(){
   controls.minDistance = 100;
   controls.maxDistance = 3000;
 
+  // 조명 (태양 위치에 PointLight)
   const sunLight = new THREE.PointLight(0xffffff, 2.0, 5000);
   sunLight.position.set(0,0,0);
   scene.add(sunLight);
   scene.add(new THREE.AmbientLight(0x222222));
 
+  // 별 추가
   addStarField();
 
+  // 태양
   const sun = new THREE.Mesh(
     new THREE.SphereGeometry(40, 32, 32),
     new THREE.MeshBasicMaterial({ color: 0xffdd55 })
   );
   scene.add(sun);
 
+  // 데이터: 이름, 반지름(화면용), 거리, 공전속도, 궤도기울기, 옵션
   const planetData = [
     {name:"수성", size:6, dist:80, speed:0.018, tilt: 0.06},
     {name:"금성", size:9, dist:115, speed:0.015, tilt: 0.04},
@@ -76,25 +84,30 @@ function init(){
     {name:"해왕성", size:15, dist:415, speed:0.0038, tilt: 0.04, darkSpot:true}
   ];
 
+  // 각 행성 생성: pivot을 만들어서 pivot에 행성 배치 -> pivot 회전으로 공전(궤도면 기울기 적용)
   planetData.forEach((p, idx) => {
-
+    // pivot: 회전시킬 기준 (태양 중심)
     const pivot = new THREE.Object3D();
     scene.add(pivot);
 
-    pivot.rotation.x = p.tilt; 
+    // 기울기(tilt)는 pivot을 x축 기준으로 회전 (궤도면을 기울임)
+    pivot.rotation.x = p.tilt; // 기울기 만큼 회전시키면 해당 평면 위에서 공전함
 
+    // 행성 메쉬 (planet mesh)
     const planetMat = new THREE.MeshStandardMaterial({ color: getColorByName(p.name), roughness:0.8, metalness:0.0 });
     const planetMesh = new THREE.Mesh(new THREE.SphereGeometry(p.size, 32, 32), planetMat);
 
+    // 행성은 pivot의 local x축상 거리에 배치
     planetMesh.position.set(p.dist, 0, 0);
     pivot.add(planetMesh);
 
+    // 궤도선(타원 형태처럼 보이게) — 실제로는 원을 그려놓고 pivot과 동일한 tilt 적용
     const orbit = createOrbitLine(p.dist, 256, 0xffffff);
-
+    // orbit은 scene에 추가한 뒤 pivot과 같은 기울기 적용
     orbit.rotation.x = p.tilt;
     scene.add(orbit);
 
-
+    // 특수 효과(극관, spots, redSpot, ring 등)
     if(p.polar){
       addPolarCaps(planetMesh, p.size);
     }
@@ -112,6 +125,7 @@ function init(){
       addSaturnRing(planetMesh, p.size);
     }
 
+    // if earth -> 달 pivot(지구 축에 상대적으로 도는 방식으로)
     if(p.name === "지구"){
       moonPivot = new THREE.Object3D();
       planetMesh.add(moonPivot);
@@ -121,11 +135,13 @@ function init(){
       moonPivot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.04 };
     }
 
+    // 저장
     planetPivots.push({ pivot: pivot, data: p, angle: Math.random()*Math.PI*2 });
     planets.push({ mesh: planetMesh, data:p });
     orbitLines.push(orbit);
   });
 
+  // UI 버튼 연결
   document.getElementById('btnRun').onclick = () => {
     isRunning = !isRunning;
     document.getElementById('btnRun').textContent = isRunning ? "정지" : "재생";
@@ -139,20 +155,25 @@ function init(){
   window.addEventListener('resize', onWindowResize);
 }
 
-
+/* =========================
+   애니메이션 루프
+   ========================= */
 function animate(){
   requestAnimationFrame(animate);
 
+  // 공전: pivot 회전으로 처리 -> pivot.rotation.y 증가
   planetPivots.forEach(item => {
     if(isRunning) item.pivot.rotation.y += item.data.speed;
-(spin) : planet.mesh.rotation.y
+    // 자기 자전 (spin) : planet.mesh.rotation.y
     const planetMesh = item.pivot.children[0]; // planet mesh가 pivot의 첫번째 자식
     if(item.data.spin && isRunning){
       planetMesh.rotation.y += item.data.spin;
     } else {
+      // 그래도 목성 같은 큰 행성은 약간 자전 (시각적)
       if(item.data.name === "목성" || item.data.name === "토성" || item.data.name === "천왕성") planetMesh.rotation.y += 0.02;
     }
 
+    // 목성 위성들(planet 내부에 moons group가 있으면 공전시킴)
     if(planetMesh.userData.moons){
       planetMesh.userData.moons.forEach(mobj => {
         if(isRunning) mobj.pivot.rotation.y += mobj.speed;
@@ -160,23 +181,30 @@ function animate(){
     }
   });
 
+  // 달 공전(earth의 moonPivot)
   if(moonPivot){
     if(isRunning) moonPivot.rotation.y += moonPivot.userData.speed;
+    // 지구 자전: planets 배열에서 지구 찾기
     const earthEntry = planets.find(p => p.data.name === "지구");
-    if(earthEntry && isRunning) earthEntry.mesh.rotation.y += 0.04;
+    if(earthEntry && isRunning) earthEntry.mesh.rotation.y += 0.04; // 지구 자전
   }
 
   controls.update();
   renderer.render(scene, camera);
 }
 
+/* =========================
+   유틸 / 도우미 함수들
+   ========================= */
 
+// 화면 크기
 function onWindowResize(){
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+// 행성 색상 간단 helper
 function getColorByName(name){
   switch(name){
     case "수성": return 0xaaaaaa;
@@ -191,6 +219,7 @@ function getColorByName(name){
   }
 }
 
+// 궤도선 생성: 평면 원(중심은 0,0,0) — pivot과 동일한 tilt로 돌려서 사용
 function createOrbitLine(radius, segments = 128, color = 0x888888){
   const geometry = new THREE.BufferGeometry();
   const positions = [];
@@ -201,15 +230,16 @@ function createOrbitLine(radius, segments = 128, color = 0x888888){
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   const material = new THREE.LineBasicMaterial({ color: color, transparent:true, opacity:0.5 });
   const line = new THREE.Line(geometry, material);
-  line.rotation.x = 0;
+  line.rotation.x = 0; // 궤도 기울기는 외부에서 동일하게 설정
   return line;
 }
 
+// 극관(흰 덮개) — 원래처럼 타원 전체를 덮는 방식 대신 '캡'으로 처리해서 흰 타원 문제 제거
 function addPolarCaps(planetMesh, size){
   const capMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness:0.9 });
   const capN = new THREE.Mesh(new THREE.SphereGeometry(size*0.6, 16, 16), capMat);
-  capN.position.set(0, size*0.75, 0); 
-  capN.scale.set(1,0.5,1); 
+  capN.position.set(0, size*0.75, 0); // 북극 근처
+  capN.scale.set(1,0.5,1); // 약간 눌러서 cap 모양
   planetMesh.add(capN);
 
   const capS = new THREE.Mesh(new THREE.SphereGeometry(size*0.6, 16, 16), capMat);
@@ -218,10 +248,11 @@ function addPolarCaps(planetMesh, size){
   planetMesh.add(capS);
 }
 
+// 화성 운석자국(작은 음영 점들)
 function addScars(planetMesh, size, count){
   for(let i=0;i<count;i++){
     const s = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshStandardMaterial({ color:0x993322 }));
-
+    // 랜덤한 표면 위치
     const phi = Math.acos(2*Math.random() - 1);
     const theta = Math.random()*Math.PI*2;
     const x = Math.sin(phi)*Math.cos(theta)*size;
@@ -232,25 +263,28 @@ function addScars(planetMesh, size, count){
   }
 }
 
-
+// 목성 대적점 (붉은 반점)
 function addRedSpot(planetMesh, size){
   const spot = new THREE.Mesh(new THREE.SphereGeometry(size*0.18, 12, 12), new THREE.MeshStandardMaterial({ color:0xff3300 }));
   spot.position.set(size*0.6, 0, 0);
   planetMesh.add(spot);
 }
 
+// 해왕성 대흑점
 function addDarkSpot(planetMesh, size){
   const spot = new THREE.Mesh(new THREE.SphereGeometry(size*0.14, 12, 12), new THREE.MeshStandardMaterial({ color:0x001133 }));
   spot.position.set(-size*0.5, 0, 0);
   planetMesh.add(spot);
 }
 
+// 토성 고리
 function addSaturnRing(planetMesh, size){
   const ring = new THREE.Mesh(new THREE.RingGeometry(size*1.2, size*1.7, 64), new THREE.MeshBasicMaterial({ color:0xded19b, side:THREE.DoubleSide, transparent:true, opacity:0.6 }));
   ring.rotation.x = Math.PI / 2;
   planetMesh.add(ring);
 }
 
+// 목성처럼 "위성이 많다"를 표현 — 내부에 작은 pivot들을 만들어 공전시킴
 function addManyMoons(planetMesh, planetSize, count){
   planetMesh.userData.moons = [];
   for(let i=0;i<count;i++){
@@ -263,10 +297,12 @@ function addManyMoons(planetMesh, planetSize, count){
     m.position.set(r, 0, 0);
     mPivot.add(m);
 
+    // 저장(각 달의 pivot을 돌려 공전)
     planetMesh.userData.moons.push({ pivot: mPivot, speed: 0.02 + Math.random()*0.02 });
   }
 }
 
+// 스타필드 추가
 function addStarField(){
   const starsGeo = new THREE.BufferGeometry();
   const starCount = 1500;
@@ -282,8 +318,12 @@ function addStarField(){
   scene.add(stars);
 }
 
+/* =========================
+   초기화 렌더러 관련 (한 번만 생성)
+   ========================= */
 (function createRenderer() {
   // renderer가 이미 만들어졌다면 재사용 (init()에서 append)
+  // 여기선 renderer를 전역으로 사용하기 위해 생성
   renderer.setClearColor(0x000000, 1);
 })();
 
